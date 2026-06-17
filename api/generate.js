@@ -13,40 +13,26 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    // 予測を開始
-    const startRes = await fetch('https://api.replicate.com/v1/predictions', {
+    const startRes = await fetch('https://api.replicate.com/v1/models/meta/musicgen/predictions', {
       method: 'POST',
       headers: {
         'Authorization': `Token ${apiKey}`,
         'Content-Type': 'application/json',
+        'Prefer': 'wait',
       },
       body: JSON.stringify({
-        version: 'b05b1dff1d8c6dc63d14b0cdb42135378dcb87f6942db2d670636e2b9dec0e6',
         input: {
           prompt: prompt,
           duration: parseInt(duration) || 15,
+          output_format: 'wav',
         }
       }),
     });
 
-    const prediction = await startRes.json();
-    if (!startRes.ok) return res.status(startRes.status).json(prediction);
+    const result = await startRes.json();
+    if (!startRes.ok) return res.status(startRes.status).json(result);
+    if (!result.output) return res.status(500).json({ error: '生成失敗' });
 
-    // 完了まで待つ（最大120秒）
-    let result = prediction;
-    for (let i = 0; i < 60; i++) {
-      if (result.status === 'succeeded') break;
-      if (result.status === 'failed') return res.status(500).json({ error: '生成失敗' });
-      await new Promise(r => setTimeout(r, 2000));
-      const pollRes = await fetch(`https://api.replicate.com/v1/predictions/${result.id}`, {
-        headers: { 'Authorization': `Token ${apiKey}` }
-      });
-      result = await pollRes.json();
-    }
-
-    if (!result.output) return res.status(500).json({ error: 'タイムアウト' });
-
-    // 音声ファイルを取得してそのまま返す
     const audioRes = await fetch(result.output);
     const buffer = await audioRes.arrayBuffer();
     res.setHeader('Content-Type', 'audio/wav');
